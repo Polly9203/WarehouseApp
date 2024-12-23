@@ -1,0 +1,130 @@
+﻿@page "/Warehouses"
+@using global::WarehouseApp.WarehouseApp.Application.DTOs
+@using global::WarehouseApp.WarehouseApp.Application.Services.Items
+@using global::WarehouseApp.WarehouseApp.Application.Services.Warehouses
+@using global::WarehouseApp.WarehouseApp.Domain.Entities
+@inject IWarehouseService WarehouseService
+@inject IItemService ItemService
+
+@inject NavigationManager NavigationManager
+
+<PageTitle>Warehouses</PageTitle>
+
+<h1>Warehouse and Items Management</h1>
+
+<h3>Warehouse: @(SelectedWarehouse?.Name ?? "Select a warehouse")</h3>
+<p>Address: @(SelectedWarehouse?.Address ?? "No address available")</p>
+
+<select @onchange="HandleWarehouseSelection">
+
+    @foreach (var warehouse in WarehousesList)
+    {
+        <option value="@warehouse.Id">@warehouse.Name</option>
+    }
+</select>
+
+@if (SelectedWarehouse != null && Items.Any())
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Item ID</th>
+                <th>Name</th>
+                <th>Quantity</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in Items)
+            {
+                <tr>
+                    <td>@item.Id</td>
+                    <td>@item.Name</td>
+                    <td>@item.Quantity</td>
+                    <td>
+                        <button @onclick="() => UpdateQuantity(item, 1)" class="btn btn-success">+</button>
+                        <button @onclick="() => UpdateQuantity(item, -1)" class="btn btn-danger" disabled="@(item.Quantity <= 0)">-</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else if (SelectedWarehouse != null)
+{
+    <p>No items available in this warehouse.</p>
+}
+
+@if (ShowWarning)
+{
+    <div class="alert alert-warning">
+        The quantity of this item has been updated by another user. Please refresh the page to get the latest data before updating the quantity.
+    </div>
+}
+
+@code {
+    private List<WarehouseDto> WarehousesList = new();
+    private WarehouseDto? SelectedWarehouse;
+    private List<ItemDto> Items = new();
+    private bool ShowWarning = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadWarehousesAsync();
+
+        if (!WarehousesList.Any())
+        {
+            NavigationManager.NavigateTo("/NoWarehouses");
+            return;
+        }
+        else
+        {
+            SelectedWarehouse = WarehousesList.First();
+            await LoadItemsAsync(SelectedWarehouse.Id);
+        }
+    }
+
+    private async Task LoadWarehousesAsync()
+    {
+        WarehousesList = (await WarehouseService.GetAllAsync()).ToList();
+    }
+
+    private async Task LoadItemsAsync(int? warehouseId)
+    {
+        if (warehouseId is not null)
+        {
+            Items = (await ItemService.GetItemsByWarehouseIdAsync(warehouseId.Value)).ToList();
+        }
+    }
+
+    private async Task HandleWarehouseSelection(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var warehouseId))
+        {
+            SelectedWarehouse = WarehousesList.FirstOrDefault(w => w.Id == warehouseId);
+
+            await LoadItemsAsync(SelectedWarehouse?.Id);
+        }
+    }
+
+    private async Task UpdateQuantity(ItemDto item, int amount)
+    {
+        var validItem = await ItemService.GetByIdAsync(item.Id);
+        var currentItem = Items.FirstOrDefault(x => x.Id == item.Id);
+
+        if (validItem is not null && currentItem is not null)
+        {
+            if (validItem.Quantity != currentItem.Quantity)
+            {
+                ShowWarning = true;
+                return;
+            }
+
+            item.Quantity = Math.Max(0, item.Quantity + amount);
+
+            await ItemService.UpdateAsync(currentItem);
+
+            ShowWarning = false;
+        }
+    }
+}
